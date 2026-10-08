@@ -1,0 +1,135 @@
+---
+const base = (import.meta.env.BASE_URL || "/").replace(/\/$/, "");
+const WA_NUMBER = "6282340336561";
+---
+<html lang="id"><head><meta charset="utf-8" />
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover" />
+<meta name="theme-color" content="#0B1526" />
+<title>Tiket Teknisi — Work Order Lapangan</title>
+<meta name="description" content="Aplikasi tiket kerja teknisi lapangan: catat, pantau status, share WA, export CSV. Offline di HP." />
+<style is:global>
+*{box-sizing:border-box}body{margin:0;background:#0B1526;color:#E7EEF7;font-family:Inter,'Segoe UI',system-ui,Arial}
+.wrap{max-width:640px;margin:0 auto;padding:0 16px 90px}
+header{position:sticky;top:0;z-index:10;background:rgba(11,21,38,.95);backdrop-filter:blur(10px);padding:14px 0 10px;border-bottom:1px solid #22365A}
+header b{font-size:18px}header small{display:block;color:#8DBDFF;font-size:12px}
+.stats{display:flex;gap:8px;margin:14px 0}.stat{flex:1;background:#111F36;border:1px solid #22365A;border-radius:12px;padding:10px;text-align:center}
+.stat b{font-size:22px;display:block}.stat span{font-size:11px;color:#8DBDFF}
+form.card,.card{background:#111F36;border:1px solid #22365A;border-radius:14px;padding:16px;margin-top:12px}
+label{font-size:12px;color:#8DBDFF;display:block;margin:10px 0 4px}
+input,select,textarea{width:100%;padding:12px;border-radius:10px;border:1px solid #2A3F5F;background:#0B1526;color:#E7EEF7;font-size:16px}
+textarea{min-height:64px;resize:vertical}
+.btn{display:inline-block;background:#FF8A00;color:#13100A;font-weight:800;padding:13px 18px;border-radius:10px;border:none;font-size:15px;text-decoration:none;text-align:center}
+.btn.block{width:100%;margin-top:12px}.btn.ghost{background:transparent;border:1px solid #2A3F5F;color:#E7EEF7}
+.btn.small{padding:8px 12px;font-size:13px}.btn.wa{background:#25D366;color:#06281A}
+.chips{display:flex;gap:8px;margin-top:12px;overflow-x:auto;padding-bottom:4px}
+.chip{flex:none;border:1px solid #2A3F5F;background:transparent;color:#BFD2EC;border-radius:100px;padding:8px 16px;font-size:13px}
+.chip.on{background:#FF8A00;border-color:#FF8A00;color:#13100A;font-weight:800}
+.tiket{border-left:4px solid #8DBDFF}.tiket.p-Baru{border-color:#8DBDFF}.tiket.p-Dikerjakan{border-color:#FF8A00}.tiket.p-Selesai{border-color:#3FB950;opacity:.85}
+.tiket h3{margin:0 0 4px;font-size:16px}.meta{font-size:12px;color:#8DBDFF;font-family:monospace}
+.tiket p{font-size:14px;color:#BFD2EC;margin:8px 0}.row{display:flex;gap:8px;margin-top:10px;flex-wrap:wrap}
+.badge{display:inline-block;font-size:11px;font-weight:800;border-radius:100px;padding:3px 10px;background:#22365A}
+.empty{text-align:center;color:#6B84A3;padding:32px 0;font-size:14px}
+footer{position:fixed;bottom:0;left:0;right:0;background:rgba(11,21,38,.95);border-top:1px solid #22365A;padding:10px 16px;display:flex;gap:8px;max-width:640px;margin:0 auto}
+footer .btn{flex:1;margin:0}
+</style></head>
+<body><div class="wrap">
+<header><b>🎫 Tiket Teknisi</b><small>Work order lapangan — tersimpan offline di HP</small></header>
+
+<div class="stats">
+<div class="stat"><b id="cBaru">0</b><span>Baru</span></div>
+<div class="stat"><b id="cKerja">0</b><span>Dikerjakan</span></div>
+<div class="stat"><b id="cSelesai">0</b><span>Selesai</span></div>
+</div>
+
+<form class="card" id="form">
+<label>Judul pekerjaan</label>
+<input id="fJudul" required maxlength="80" placeholder="cth: Internet lambat — Hotel X lt.3" />
+<label>Lokasi</label>
+<input id="fLokasi" maxlength="80" placeholder="cth: Bandar Lampung — Teluk" />
+<label style="display:flex;gap:8px"><span style="flex:1">Prioritas<select id="fPrior"><option>Normal</option><option>Tinggi</option><option>Darurat</option></select></span><span style="flex:1">Teknisi<select id="fTeknisi"><option>Tim 1</option><option>Tim 2</option><option>Tim 3</option><option>Vendor</option></select></span></label>
+<label>Catatan</label>
+<textarea id="fCatatan" maxlength="300" placeholder="Detail keluhan / info akses..."></textarea>
+<button class="btn block" type="submit">+ Buat Tiket</button>
+</form>
+
+<div class="chips" id="chips">
+<button class="chip on" data-f="Semua">Semua</button>
+<button class="chip" data-f="Baru">Baru</button>
+<button class="chip" data-f="Dikerjakan">Dikerjakan</button>
+<button class="chip" data-f="Selesai">Selesai</button>
+</div>
+
+<div id="list"></div>
+
+<footer>
+<button class="btn ghost" id="btnExport">⬇ CSV</button>
+<button class="btn ghost" id="btnWipe">🗑 Bersihkan selesai</button>
+</footer>
+</div>
+
+<script define:vars={{ base, waNumber: WA_NUMBER }}>
+const KEY = "tiket-teknisi-db";
+let filter = "Semua";
+const esc = s => String(s ?? "").replace(/[&<>"']/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
+const load = () => { try { return JSON.parse(localStorage.getItem(KEY)) || [] } catch { return [] } };
+const save = d => localStorage.setItem(KEY, JSON.stringify(d));
+
+function render() {
+  const db = load();
+  cBaru.textContent = db.filter(t => t.status === "Baru").length;
+  cKerja.textContent = db.filter(t => t.status === "Dikerjakan").length;
+  cSelesai.textContent = db.filter(t => t.status === "Selesai").length;
+  const rows = db.filter(t => filter === "Semua" || t.status === filter);
+  list.innerHTML = rows.length ? rows.map(t => `
+    <div class="card tiket p-${t.status}">
+      <h3>${esc(t.judul)}</h3>
+      <div class="meta">#${t.id} • ${esc(t.lokasi)} • ${esc(t.prior)} • ${esc(t.teknisi)} • ${esc(t.tgl)}</div>
+      <p>${esc(t.catatan) || "-"}</p>
+      <div class="row">
+        <span class="badge">${t.status}</span>
+        <button class="btn small" onclick="ganti(${t.id})">▶ Status</button>
+        <button class="btn small wa" onclick="shareWA(${t.id})">WA</button>
+        <button class="btn small ghost" onclick="hapus(${t.id})">Hapus</button>
+      </div>
+    </div>`).join("") : `<div class="empty">Belum ada tiket.<br />Buat dari form di atas 👆</div>`;
+}
+
+form.onsubmit = e => {
+  e.preventDefault();
+  const db = load();
+  db.unshift({ id: Date.now(), judul: fJudul.value.trim(), lokasi: fLokasi.value.trim() || "-",
+    prior: fPrior.value, teknisi: fTeknisi.value, catatan: fCatatan.value.trim(),
+    status: "Baru", tgl: new Date().toLocaleString("id-ID") });
+  save(db); form.reset(); render();
+};
+
+window.ganti = id => {
+  const db = load(); const t = db.find(x => x.id === id); if (!t) return;
+  t.status = t.status === "Baru" ? "Dikerjakan" : t.status === "Dikerjakan" ? "Selesai" : "Baru";
+  save(db); render();
+};
+window.hapus = id => { if (confirm("Hapus tiket ini?")) { save(load().filter(x => x.id !== id)); render(); } };
+window.shareWA = id => {
+  const t = load().find(x => x.id === id); if (!t) return;
+  const txt = `TIKET #${t.id}%0A${t.judul}%0ALokasi: ${t.lokasi}%0APrioritas: ${t.prior}%0ATeknisi: ${t.teknisi}%0AStatus: ${t.status}%0A${t.catatan}`;
+  open(`https://wa.me/${waNumber}?text=${encodeURIComponent(txt).replace(/%(0A|20)/g, m => m === "%0A" ? "%0A" : "%20")}`, "_blank");
+};
+chips.onclick = e => {
+  const b = e.target.closest(".chip"); if (!b) return;
+  document.querySelectorAll(".chip").forEach(c => c.classList.remove("on"));
+  b.classList.add("on"); filter = b.dataset.f; render();
+};
+btnExport.onclick = () => {
+  const db = load(); if (!db.length) return alert("Belum ada data.");
+  const csv = "id;judul;lokasi;prioritas;teknisi;status;tanggal;catatan\n" +
+    db.map(t => [t.id, t.judul, t.lokasi, t.prior, t.teknisi, t.status, t.tgl, t.catatan].map(v => `"${String(v ?? "").replace(/"/g, '""')}"`).join(";")).join("\n");
+  const a = document.createElement("a");
+  a.href = URL.createObjectURL(new Blob([csv], { type: "text/csv" }));
+  a.download = "tiket-teknisi.csv"; a.click();
+};
+btnWipe.onclick = () => {
+  if (confirm("Hapus semua tiket berstatus Selesai?")) { save(load().filter(x => x.status !== "Selesai")); render(); }
+};
+render();
+</script>
+</body></html>
